@@ -1,5 +1,4 @@
-import { expect } from "@std/expect";
-import { make_key_paths as test_target } from "./make_key_paths.ts";
+import { json_to_flat_nodes as test_target } from "./json_to_flat_nodes.ts";
 
 const test_name = `Check ${test_target.name} function`;
 

@@ -1,12 +1,17 @@
 import { is_json_curly_braced_object } from "@kindkitchen/util-jstr";
 import { is_json_non_primitive } from "./helper/is_json_non_primitive.ts";
 import { is_json_primitive } from "./helper/is_json_primitive.ts";
-import { JsonArray, JsonObject, JsonPrimitive, JsonValue } from "./types.ts";
+import type {
+  JsonArray,
+  JsonObject,
+  JsonPrimitive,
+  JsonValue,
+} from "./types.ts";
 
 /**
  * Collect all possible paths in a value.
  */
-export function make_key_paths(
+export function json_to_flat_nodes(
   original: JsonObject | JsonArray,
 ): _Result {
   const meta_nodes = [] as _Result;

@@ -1,11 +1,5 @@
-import { groupCollapsed } from "node:console";
-import { JsonPrimitive, make_key_paths } from "../mod.ts";
-import { stat } from "node:fs";
-import { follow_key_path } from "../src/follow_key_path.ts";
+import { json_to_flat_nodes } from "./src/json_to_flat_nodes.ts";
 
-const log = (...values: any[]) => {
-  console.log(...values);
-};
 const example = {
   ok: "google",
   arr: [1, 2],
@@ -48,18 +42,11 @@ const example = {
   //   ],
   // },
 };
-const data = make_key_paths(example);
+const data = json_to_flat_nodes(example);
 const result = [] as any[];
 let prev_path = data.at(0)?.path!;
-let navigation = [];
+const navigation = [];
 for (const node of data) {
-  console.log("navigation", navigation);
-  console.log("result    ", result);
-  console.log("\n");
-  console.log("next node");
-  console.log(node);
-  console.log("\n\n\n");
-
   /**
    * >>>>
    * Compute key of the current node
@@ -77,97 +64,69 @@ for (const node of data) {
    * First iteration (root node)
    */
   if (result.length === 0) {
-    const [open, close] = generate_open_close_brackets(node.type!);
+    /// TODO - partially ducplicated code... (it is simple to explicitly handle first ever case but... ugly)
+    const [open, close] = node.type === "array" ? ["[", "]"] : ["{", "}"];
     result.push(key + open);
     const childs = Array.from({ length: node.len! }).map(() => []);
     result.push(...childs);
     result.push(close);
     navigation.push(0);
-  } /// <<<<
+    prev_path = node.path; /// duplicate because of <continue usage>
+    continue;
+  }
+  /// <<<<
 
-  else if (node.path.length === prev_path.length) {
+  /**
+   * >>>>
+   * Compute navigation for current node
+   */
+  if (node.path.length === prev_path.length) {
+    /**
+     * Continue traverse over the same level
+     * - move cursor to next container
+     */
     ++navigation[navigation.length - 1];
-    const container = navigation.reduce((acc, i) => {
-      return acc.filter((el) => Array.isArray(el))[i];
-    }, result);
-    if (node.value !== undefined) {
-      container.push(`${key}${JSON.stringify(node.value)}`);
-    } else {
-      const [open, close] = generate_open_close_brackets(node.type);
-      container.push(key + open);
-      const childs = Array.from({ length: node.len! }).map(() => []);
-      container.push(...childs);
-      container.push(close);
-      if (childs.length) {
-        navigation.push(0);
-      }
-    }
   } else if (node.path.length > prev_path.length) {
-    const container = navigation.reduce((acc, i) => {
-      return acc.filter((el) => Array.isArray(el))[i];
-    }, result);
-    if (node.value !== undefined) {
-      container.push(`${key}${JSON.stringify(node.value)}`);
-    } else {
-      const [open, close] = generate_open_close_brackets(node.type);
-      container.push(key + open);
-      const childs = Array.from({ length: node.len! }).map(() => []);
-      container.push(...childs);
-      container.push(close);
-      if (childs.length) {
-        navigation.push(0);
-      }
-    }
+    /**
+     * Go one level deeper - nothing to do now,
+     * the new containers will be created.
+     */
   } else if (node.path.length < prev_path.length) {
+    /**
+     * Back to upper tree's part (probably some level at once)
+     */
     for (let i = 0; i < prev_path.length - node.path.length; ++i) {
       navigation.pop();
     }
     ++navigation[navigation.length - 1];
-    console.log(navigation);
-    console.log(JSON.stringify(result, null, 0));
-    const container = navigation.reduce((acc, i) => {
-      console.log(acc);
-      console.log(i);
-      const segment = acc.filter((el) => Array.isArray(el))[i];
+  }
+  //// <<<<
 
-      console.log(segment);
+  const container = navigation.reduce((acc, i) => {
+    return acc.filter((el) => Array.isArray(el))[i];
+  }, result);
 
-      return segment;
-    }, result);
-    console.log(container);
-    if (node.value !== undefined) {
-      container.push(`${key}${JSON.stringify(node.value)}`);
-    } else {
-      const [open, close] = generate_open_close_brackets(node.type);
-      container.push(key + open);
-      const childs = Array.from({ length: node.len! }).map(() => []);
-      container.push(...childs);
-      container.push(close);
-      if (childs.length) {
-        navigation.push(0);
-      }
-    }
+  if (node.value !== undefined) {
+    container.push(`${key}${JSON.stringify(node.value)}`);
   } else {
-    ////
+    const [open, close] = node.type === "array" ? ["[", "]"] : ["{", "}"];
+    container.push(key + open);
+    const childs = Array.from({ length: node.len! }).map(() => []);
+    container.push(...childs);
+    container.push(close);
+    if (childs.length) {
+      navigation.push(0);
+    }
   }
 
   prev_path = node.path;
 }
 
-log(example, "example");
-log(data, "data");
-log(result, "result");
-
-function generate_open_close_brackets(type: string): [string, string] {
-  if (type === "array") {
-    return ["[", "]"];
-  } else if (type === "object") {
-    return ["{", "}"];
-  }
-
-  throw new Error(
-    "Incorect usage: should work only for type <array> or <object>",
-  );
-}
-
-
+console.log(example, "example");
+console.log(result, "result");
+const flatten = result.flat(Infinity);
+console.log(flatten, "result flatten");
+console.log(
+  JSON.parse(flatten.join("")),
+  "JSON.parse(result as joined string)",
+);
