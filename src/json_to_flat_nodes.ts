@@ -1,91 +1,211 @@
-import { is_json_curly_braced_object } from "@kindkitchen/util-jstr";
-import { is_json_non_primitive } from "./helper/is_json_non_primitive.ts";
-import { is_json_primitive } from "./helper/is_json_primitive.ts";
-import type {
-  JsonArray,
-  JsonObject,
-  JsonPrimitive,
-  JsonValue,
-} from "./types.ts";
+import type { JsonArray, JsonObject, JsonValue } from "./types.ts";
+import {
+  is_json_non_primitive,
+  is_json_primitive,
+  unknown_to_kv_pairs,
+} from "./helper/mod.ts";
 
-/**
- * Collect all possible paths in a value.
- */
-export function json_to_flat_nodes(
-  original: JsonObject | JsonArray,
-): _Result {
-  const meta_nodes = [] as _Result;
-  const iteration: _El[] = Array.isArray(original)
-    ? original.map((v, i) => [i, v, []])
-    : Object.entries(original).map(([k, v]) => [k, v, []]);
-
-  const root_path = is_json_curly_braced_object(original)
-    ? {
-      path: [],
-      type: "object" as const,
-      value: undefined,
-      len: iteration.length,
-    }
-    : {
-      path: [],
-      type: "array" as const,
-      value: undefined,
-      len: iteration.length,
-    } as _Result[number];
-  meta_nodes.push(root_path);
-
-  for (const item of iteration) {
-    const [k, value, up_level_paths] = item;
-    const is_non_primitive = is_json_non_primitive(value);
-
-    if (!is_json_primitive(value) && !is_non_primitive) {
-      continue;
-    }
-
-    const type = Array.isArray(value)
-      ? "array"
-      : value === null
-      ? "null"
-      : typeof value === "object"
-      ? "object"
-      : typeof value as "string" | "number" | "boolean";
-    const meta: _Result[number] = {
-      path: [...up_level_paths, k],
-      len: undefined,
+export function json_to_flat_nodes<
+  JNode = {
+    value: JsonValue;
+    path: Key[];
+    type: JType;
+    has_root: boolean;
+    root: JsonArray | JsonObject | undefined;
+    root_type: "{}" | "[]" | undefined;
+  },
+>(
+  something: unknown,
+  options: Partial<{
+    /**
+     * How to iterate over nodes
+     * - DPS means go deeper whenever possible
+     * - Level by level - go deeper after exploring siblings
+     *
+     * DPS is a default value
+     */
+    traverse_strategy: TraverseStrategy;
+    compute_node: (
+      /**
+       * Strict-Json value
+       * - string | number | boolean | null
+       * - array
+       * - object (like {} literal)
+       */
+      value: JsonValue,
+      /**
+       * Type clarification for value
+       */
+      type: JType,
+      /**
+       * Array of path to this node
+       * > number for index in array
+       * > string for key in object
+       */
+      path: Key[],
+      /**
+       * Obviously any value except origin itself will have `true`
+       */
+      has_root: boolean,
+      /**
+       * That's why root is alway non-undefined except first ever case
+       * So `has_root` is a sugar to `root !== undefined`
+       */
+      root: JsonArray | JsonObject | undefined,
+      /**
+       * Type clarification for root.
+       * object | array
+       * (undefined if no root)
+       */
+      root_type: "[]" | "{}" | undefined,
+    ) => JNode;
+  }> = {},
+) {
+  const {
+    traverse_strategy = "DFS (depth-first-search)",
+    compute_node = (value, type, path, has_root, root, root_type) => ({
+      value,
+      path,
       type,
-      value: type !== "object" && type !== "array"
-        ? value as JsonPrimitive
-        : undefined,
-    };
+      has_root,
+      root,
+      root_type,
+    }),
+  } = options;
 
-    if (is_non_primitive) {
-      const p = [...up_level_paths, k];
-      const tail = Array.isArray(value)
-        ? value.map((v, i) => [i, v, p] as _El)
-        : Object.entries(value).map((
-          [k, v],
-        ) => [k, v, p] as _El);
-      iteration.push(...tail);
-      meta.len = tail.length;
-    }
-
-    meta_nodes.push(meta);
+  if (is_json_primitive(something)) {
+    return [
+      compute_node(
+        something,
+        typeof something as "string" | "number" | "boolean" | "null",
+        [],
+        false,
+        undefined,
+        undefined,
+      ),
+    ];
+  } else if (!is_json_non_primitive(something)) {
+    return [];
   }
-  return meta_nodes.sort((a, b) => {
-    const i_diff = a.path.findIndex((p, i) => p !== b.path[i]);
-    const i_a = a.path[i_diff];
-    const i_b = b.path[i_diff];
-    if (typeof i_a === "number" && typeof i_b === "number") {
-      return 0;
+
+  const result = [
+    compute_node(
+      something,
+      Array.isArray(something) ? "[]" : "{}",
+      [],
+      false,
+      undefined,
+      undefined,
+    ),
+  ];
+
+  if (traverse_strategy === "DFS (depth-first-search)") {
+    const non_primitive_stack = [] as Array<[
+      (JsonArray | JsonObject),
+      Key[],
+      (JsonArray | JsonObject),
+    ]>;
+    for (const [k, v] of unknown_to_kv_pairs(something)) {
+      const path = [k];
+      if (is_json_non_primitive(v)) {
+        non_primitive_stack.push([v, path, something]);
+      } else if (is_json_primitive(v)) {
+        result.push(
+          compute_node(
+            v,
+            typeof v as "string" | "number" | "boolean" | "null",
+            path,
+            true,
+            something,
+            Array.isArray(something) ? "[]" : "{}",
+          ),
+        );
+      }
     }
-    return i_a > i_b ? -1 : 1;
-  });
+    while (non_primitive_stack.length) {
+      const [value, prev_path, root] = non_primitive_stack.pop()!;
+
+      result.push(
+        compute_node(
+          value,
+          Array.isArray(value) ? "[]" : "{}",
+          prev_path,
+          true,
+          root,
+          Array.isArray(root) ? "[]" : "{}",
+        ),
+      );
+      for (const [k, v] of unknown_to_kv_pairs(value)) {
+        const path = [...prev_path, k];
+        if (is_json_non_primitive(v)) {
+          non_primitive_stack.push([v, path, value]);
+        } else if (is_json_primitive(v)) {
+          result.push(
+            compute_node(
+              v,
+              typeof v as "string" | "number" | "boolean" | "null",
+              path,
+              true,
+              value,
+              Array.isArray(value) ? "[]" : "{}",
+            ),
+          );
+        }
+      }
+    }
+
+    return result;
+  } else if (traverse_strategy === "level-by-level") {
+    const iteration = unknown_to_kv_pairs(something).map(([k, v]) =>
+      [v, [k], something] as [JsonValue, Key[], JsonArray | JsonObject]
+    );
+    for (const [value, path, root] of iteration) {
+      if (is_json_primitive(value)) {
+        result.push(
+          compute_node(
+            value,
+            typeof value as "string" | "number" | "boolean" | "null",
+            path,
+            true,
+            root,
+            Array.isArray(root) ? "[]" : "{}",
+          ),
+        );
+        continue;
+      } else if (is_json_non_primitive(value)) {
+        result.push(
+          compute_node(
+            value,
+            Array.isArray(value) ? "[]" : "{}",
+            path,
+            true,
+            root,
+            Array.isArray(root) ? "[]" : "{}",
+          ),
+        );
+        const next_level = unknown_to_kv_pairs(value)
+          .map(([k, v]) =>
+            [v, [...path, k], value] as [
+              JsonValue,
+              Key[],
+              JsonArray | JsonObject,
+            ]
+          );
+        iteration.push(...next_level);
+      }
+    }
+
+    return result;
+  }
+
+  throw new Error(
+    `Unknown value for <traverse_strategy> option! (possible values are ${[
+      "DFS (depth-first-search)",
+      "level-by-level",
+    ] satisfies TraverseStrategy[]})`,
+  );
 }
 
-type _Result = {
-  value: JsonPrimitive | undefined;
-  len: undefined | number;
-  type: "array" | "object" | "null" | "string" | "number" | "boolean";
-  path: (string | number)[];
-}[];
-type _El = [string | number, JsonValue, (string | number)[]];
+type TraverseStrategy = "DFS (depth-first-search)" | "level-by-level";
+type Key = string | number;
+type JType = "{}" | "[]" | "string" | "number" | "boolean" | "null";

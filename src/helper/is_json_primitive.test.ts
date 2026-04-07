@@ -1,5 +1,5 @@
-import { expect } from "@std/expect";
 import { is_json_primitive as test_target } from "./is_json_primitive.ts";
+import { expect } from "@std/expect";
 
 const test_name = `Check ${test_target.name} function`;
 
