@@ -5,6 +5,21 @@ import {
   unknown_to_kv_pairs,
 } from "./helper/mod.ts";
 
+const get_jType = (value: JsonValue): JType => {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "[]";
+  if (typeof value === "object") return "{}";
+  return typeof value as "string" | "number" | "boolean";
+};
+
+const get_root_type = (root: JsonArray | JsonObject | undefined) =>
+  root ? (Array.isArray(root) ? "[]" : "{}") : undefined;
+
+const get_total_root_items = (root: JsonArray | JsonObject | undefined) =>
+  root
+    ? (Array.isArray(root) ? root.length : Object.values(root).length)
+    : undefined;
+
 export function json_to_flat_nodes<
   JNode = {
     value: JsonValue;
@@ -104,7 +119,7 @@ export function json_to_flat_nodes<
     return [
       compute_node(
         something,
-        typeof something as "string" | "number" | "boolean" | "null",
+        get_jType(something),
         [],
         false,
         undefined,
@@ -146,11 +161,11 @@ export function json_to_flat_nodes<
         result.push(
           compute_node(
             v,
-            typeof v as "string" | "number" | "boolean" | "null",
+            get_jType(v),
             path,
             true,
             something,
-            Array.isArray(something) ? "[]" : "{}",
+            get_root_type(something),
             children.length,
             i,
           ),
@@ -167,8 +182,8 @@ export function json_to_flat_nodes<
           prev_path,
           true,
           root,
-          Array.isArray(root) ? "[]" : "{}",
-          Array.isArray(root) ? root.length : Object.values(root).length,
+          get_root_type(root),
+          get_total_root_items(root),
           i,
         ),
       );
@@ -180,7 +195,7 @@ export function json_to_flat_nodes<
           result.push(
             compute_node(
               v,
-              typeof v as "string" | "number" | "boolean" | "null",
+              get_jType(v),
               path,
               true,
               value,
@@ -208,12 +223,12 @@ export function json_to_flat_nodes<
         result.push(
           compute_node(
             value,
-            typeof value as "string" | "number" | "boolean" | "null",
+            get_jType(value),
             path,
             true,
             root,
-            Array.isArray(root) ? "[]" : "{}",
-            Array.isArray(root) ? root.length : Object.values(root).length,
+            get_root_type(root),
+            get_total_root_items(root),
             index,
           ),
         );
@@ -226,8 +241,8 @@ export function json_to_flat_nodes<
             path,
             true,
             root,
-            Array.isArray(root) ? "[]" : "{}",
-            Array.isArray(root) ? root.length : Object.values(root).length,
+            get_root_type(root),
+            get_total_root_items(root),
             index,
           ),
         );
