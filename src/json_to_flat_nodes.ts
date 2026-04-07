@@ -13,6 +13,8 @@ export function json_to_flat_nodes<
     has_root: boolean;
     root: JsonArray | JsonObject | undefined;
     root_type: "{}" | "[]" | undefined;
+    total_root_items: number | undefined;
+    index_in_root: number | undefined;
   },
 >(
   something: unknown,
@@ -50,6 +52,9 @@ export function json_to_flat_nodes<
       /**
        * That's why root is alway non-undefined except first ever case
        * So `has_root` is a sugar to `root !== undefined`
+       * P.S.
+       * In case <has_root> is <false> - all rest parameters will have <undefined>.
+       * And again - in practice this is happen for first initial value only.
        */
       root: JsonArray | JsonObject | undefined,
       /**
@@ -58,18 +63,40 @@ export function json_to_flat_nodes<
        * (undefined if no root)
        */
       root_type: "[]" | "{}" | undefined,
+      /**
+       * The number of items (actual both for array or object)
+       * among which current value is placed
+       */
+      total_root_items: number | undefined,
+      /**
+       * The index of the value in the root, where it was placed during iteration.
+       * For array-roots this is simple index of value, for object-roots - this is
+       * the index, under which this key=value is placed
+       */
+      index_in_root: number | undefined,
     ) => JNode;
   }> = {},
 ) {
   const {
     traverse_strategy = "DFS (depth-first-search)",
-    compute_node = (value, type, path, has_root, root, root_type) => ({
+    compute_node = (
+      value,
+      type,
+      path,
+      has_root,
+      root,
+      root_type,
+      total_root_items,
+      index_in_root,
+    ) => ({
       value,
       path,
       type,
       has_root,
       root,
       root_type,
+      total_root_items,
+      index_in_root,
     }),
   } = options;
 
@@ -80,6 +107,8 @@ export function json_to_flat_nodes<
         typeof something as "string" | "number" | "boolean" | "null",
         [],
         false,
+        undefined,
+        undefined,
         undefined,
         undefined,
       ),
@@ -96,19 +125,23 @@ export function json_to_flat_nodes<
       false,
       undefined,
       undefined,
+      undefined,
+      undefined,
     ),
   ];
 
   if (traverse_strategy === "DFS (depth-first-search)") {
     const non_primitive_stack = [] as Array<[
-      (JsonArray | JsonObject),
-      Key[],
-      (JsonArray | JsonObject),
+      value: (JsonArray | JsonObject),
+      path_to_value_from_root: Key[],
+      root: (JsonArray | JsonObject),
+      self_index_in_root: number,
     ]>;
-    for (const [k, v] of unknown_to_kv_pairs(something)) {
+    const children = unknown_to_kv_pairs(something);
+    children.forEach(([k, v], i) => {
       const path = [k];
       if (is_json_non_primitive(v)) {
-        non_primitive_stack.push([v, path, something]);
+        non_primitive_stack.push([v, path, something, i]);
       } else if (is_json_primitive(v)) {
         result.push(
           compute_node(
@@ -118,13 +151,15 @@ export function json_to_flat_nodes<
             true,
             something,
             Array.isArray(something) ? "[]" : "{}",
+            children.length,
+            i,
           ),
         );
       }
-    }
+    });
     while (non_primitive_stack.length) {
-      const [value, prev_path, root] = non_primitive_stack.pop()!;
-
+      const [value, prev_path, root, i] = non_primitive_stack.pop()!;
+      const children = unknown_to_kv_pairs(value);
       result.push(
         compute_node(
           value,
@@ -133,12 +168,14 @@ export function json_to_flat_nodes<
           true,
           root,
           Array.isArray(root) ? "[]" : "{}",
+          Array.isArray(root) ? root.length : Object.values(root).length,
+          i,
         ),
       );
-      for (const [k, v] of unknown_to_kv_pairs(value)) {
+      children.forEach(([k, v], i) => {
         const path = [...prev_path, k];
         if (is_json_non_primitive(v)) {
-          non_primitive_stack.push([v, path, value]);
+          non_primitive_stack.push([v, path, value, i]);
         } else if (is_json_primitive(v)) {
           result.push(
             compute_node(
@@ -148,18 +185,25 @@ export function json_to_flat_nodes<
               true,
               value,
               Array.isArray(value) ? "[]" : "{}",
+              children.length,
+              i,
             ),
           );
         }
-      }
+      });
     }
 
     return result;
   } else if (traverse_strategy === "level-by-level") {
-    const iteration = unknown_to_kv_pairs(something).map(([k, v]) =>
-      [v, [k], something] as [JsonValue, Key[], JsonArray | JsonObject]
+    const iteration = unknown_to_kv_pairs(something).map(([k, v], i) =>
+      [v, [k], something, i] as [
+        value: (JsonArray | JsonObject),
+        path_to_value_from_root: Key[],
+        root: (JsonArray | JsonObject),
+        self_index_in_root: number,
+      ]
     );
-    for (const [value, path, root] of iteration) {
+    for (const [value, path, root, index] of iteration) {
       if (is_json_primitive(value)) {
         result.push(
           compute_node(
@@ -169,6 +213,8 @@ export function json_to_flat_nodes<
             true,
             root,
             Array.isArray(root) ? "[]" : "{}",
+            Array.isArray(root) ? root.length : Object.values(root).length,
+            index,
           ),
         );
         continue;
@@ -181,14 +227,17 @@ export function json_to_flat_nodes<
             true,
             root,
             Array.isArray(root) ? "[]" : "{}",
+            Array.isArray(root) ? root.length : Object.values(root).length,
+            index,
           ),
         );
         const next_level = unknown_to_kv_pairs(value)
-          .map(([k, v]) =>
-            [v, [...path, k], value] as [
-              JsonValue,
+          .map(([k, v], i) =>
+            [v, [...path, k], value, i] as [
+              JsonArray | JsonObject,
               Key[],
               JsonArray | JsonObject,
+              number,
             ]
           );
         iteration.push(...next_level);
