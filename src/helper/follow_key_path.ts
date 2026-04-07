@@ -1,4 +1,4 @@
-import { JsonArray, JsonObject, JsonValue } from "./types.ts";
+import { JsonArray, JsonObject, JsonValue } from "../types.ts";
 
 export function follow_key_path(
   path: (string | number)[],
