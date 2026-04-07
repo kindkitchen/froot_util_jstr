@@ -1,12 +1,12 @@
 {
-  "version": "0.2.0",
+  "version": "0.2.1",
   "name": "@kindkitchen/util-jstr",
   "license": "MIT",
   "imports": {
     "@std/expect": "jsr:@std/expect@^1.0.18"
   },
   "exports": {
-    "./helpers": "./helpers/mod.ts",
+    "./helpers": "./helper/mod.ts",
     ".": "./mod.ts"
   }
 }
