@@ -6,7 +6,7 @@
     "@std/expect": "jsr:@std/expect@^1.0.18"
   },
   "exports": {
-    "./helpers": "./helper/mod.ts",
+    "./helpers": "./src/helper/mod.ts",
     ".": "./mod.ts"
   }
 }
